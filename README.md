@@ -1,0 +1,1 @@
+Rust port of [terraform-config-inspect](https://github.com/hashicorp/terraform-config-inspect).
