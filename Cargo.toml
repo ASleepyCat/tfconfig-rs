@@ -1,10 +1,17 @@
 [package]
-name = "tfconfig-rs"
+name = "tfconfig"
 version = "0.1.0"
 edition = "2021"
+authors = ["ASleepyCat dyeom340@gmail.com"]
+license = "Mozilla Public License 2.0"
+description = "Rust port of HashiCorp's terraform-config-inspect Go library"
+readme = "RADME.md"
+repository = "https://github.com/ASleepyCat/tfconfig-rs"
+categories = ["parsing"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 hcl-rs = "0.14.4"
 tempdir = "0.3.7"
+thiserror = "1.0.41"
