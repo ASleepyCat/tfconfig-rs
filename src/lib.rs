@@ -11,7 +11,7 @@ pub struct Module {
 }
 
 impl Module {
-    fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         Self {
             path,
             required_core: vec![],
@@ -57,6 +57,12 @@ pub enum ParseError {
         provider_source: String,
         duplicate_source: String,
     },
+    #[error("Unexpected expression for attribute {attribute:?} in {file_name}: {expr:?}")]
+    UnexpectedExpr {
+        attribute: hcl::Attribute,
+        expr: hcl::Expression,
+        file_name: PathBuf,
+    },
 }
 
 /// Reads the directory at the given path and attempts to interpret it as a Terraform module.
@@ -69,20 +75,20 @@ pub fn load_module(path: &PathBuf) -> Result<Module, Box<dyn Error>> {
         let file_contents = fs::read_to_string(&file_name)?;
         let file = hcl::parse(&file_contents)?;
 
-        load_module_from_file(file, &mut module)?;
+        load_module_from_file(&file_name, file, &mut module)?;
     }
 
     Ok(module)
 }
 
 /// Reads given file, interprets it and stores in given [`Module`][Module]
-pub fn load_module_from_file(file: hcl::Body, module: &mut Module) -> Result<(), ParseError> {
+pub fn load_module_from_file(current_file: &PathBuf, file: hcl::Body, module: &mut Module) -> Result<(), ParseError> {
     for block in file.blocks() {
         let body = block.body();
 
         #[allow(clippy::all)]
         match block.identifier() {
-            "terraform" => handle_terraform_block(body, module)?,
+            "terraform" => handle_terraform_block(current_file, body, module)?,
             _ => (),
         }
     }
@@ -90,7 +96,7 @@ pub fn load_module_from_file(file: hcl::Body, module: &mut Module) -> Result<(),
     Ok(())
 }
 
-fn handle_terraform_block(body: &hcl::Body, module: &mut Module) -> Result<(), ParseError> {
+fn handle_terraform_block(current_file: &PathBuf, body: &hcl::Body, module: &mut Module) -> Result<(), ParseError> {
     body.attributes()
         .filter(|attr| attr.key() == "required_version")
         .for_each(|attr| {
@@ -102,7 +108,7 @@ fn handle_terraform_block(body: &hcl::Body, module: &mut Module) -> Result<(), P
     for inner_block in body.blocks() {
         #[allow(clippy::all)]
         match inner_block.identifier() {
-            "required_providers" => handle_required_providers_block(inner_block.body(), module)?,
+            "required_providers" => handle_required_providers_block(current_file, inner_block.body(), module)?,
             _ => (),
         }
     }
@@ -111,6 +117,7 @@ fn handle_terraform_block(body: &hcl::Body, module: &mut Module) -> Result<(), P
 }
 
 fn handle_required_providers_block(
+    current_file: &PathBuf,
     body: &hcl::Body,
     module: &mut Module,
 ) -> Result<(), ParseError> {
@@ -129,7 +136,13 @@ fn handle_required_providers_block(
                         .push(version.to_string().replace('"', ""));
                 }
             }
-            _ => continue,
+            _ => {
+                return Err(ParseError::UnexpectedExpr {
+                    attribute: provider.clone(),
+                    expr: provider.expr().clone(),
+                    file_name: current_file.clone(),
+                })
+            }
         };
 
         match module.required_providers.get_mut(&provider_name) {
@@ -203,130 +216,4 @@ fn get_files_in_dir(path: &PathBuf) -> Result<Vec<PathBuf>, Box<dyn Error>> {
 
     primary.append(&mut overrides);
     Ok(primary)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{error::Error, fs::File, io::Write};
-
-    use tempdir::TempDir;
-
-    use super::*;
-
-    #[test]
-    fn test_load_module() -> std::result::Result<(), Box<dyn Error>> {
-        let tmp_dir = TempDir::new("test_load_module_from_file")?;
-        let file_path = tmp_dir.path().join("version.tf");
-        let mut file = File::create(file_path)?;
-        file.write_all(
-            r#"
-            terraform {
-                required_version = "1.0.0"
-
-                required_providers {
-                    mycloud = {
-                        source  = "mycorp/mycloud"
-                        version = "~> 1.0"
-                    }
-                }
-            }
-            "#
-            .as_bytes(),
-        )?;
-
-        let pathbuf = tmp_dir.path().to_path_buf();
-        let module = load_module(&pathbuf).unwrap();
-
-        assert_eq!(module.required_core.len(), 1);
-        assert_eq!(module.required_core[0], "1.0.0");
-
-        assert_eq!(module.required_providers.len(), 1);
-        let required_provider = module.required_providers.get("mycloud");
-        assert!(required_provider.is_some());
-        let required_provider = required_provider.unwrap();
-        assert_eq!(required_provider.source, "mycorp/mycloud");
-        assert_eq!(required_provider.version_constraints.len(), 1);
-        assert_eq!(
-            required_provider.version_constraints.first().unwrap(),
-            "~> 1.0"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_load_module_from_file() -> std::result::Result<(), Box<dyn Error>> {
-        let file: hcl::Body = hcl::from_str(
-            r#"
-            terraform {
-                required_version = "1.0.0"
-
-                required_providers {
-                    mycloud = {
-                        source  = "mycorp/mycloud"
-                        version = "~> 1.0"
-                    }
-                }
-            }
-            "#,
-        )?;
-
-        let pathbuf = PathBuf::from("");
-        let mut module = Module::new(pathbuf);
-        load_module_from_file(file, &mut module)?;
-
-        assert_eq!(module.required_core.len(), 1);
-        assert_eq!(module.required_core[0], "1.0.0");
-
-        assert_eq!(module.required_providers.len(), 1);
-        let required_provider = module.required_providers.get("mycloud");
-        assert!(required_provider.is_some());
-        let required_provider = required_provider.unwrap();
-        assert_eq!(required_provider.source, "mycorp/mycloud");
-        assert_eq!(required_provider.version_constraints.len(), 1);
-        assert_eq!(
-            required_provider.version_constraints.first().unwrap(),
-            "~> 1.0"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_load_module_from_file_with_multiple_sources() -> std::result::Result<(), Box<dyn Error>>
-    {
-        let file: hcl::Body = hcl::from_str(
-            r#"
-            terraform {
-                required_version = "1.0.0"
-
-                required_providers {
-                    mycloud = {
-                        source  = "mycorp/mycloud1"
-                        version = "~> 1.0"
-                    }
-                    mycloud = {
-                        source  = "mycorp/mycloud2"
-                        version = "~> 2.0"
-                    }
-                }
-            }
-            "#,
-        )?;
-
-        let pathbuf = PathBuf::from("");
-        let mut module = Module::new(pathbuf);
-        let result = load_module_from_file(file, &mut module);
-
-        assert_eq!(
-            result,
-            Err(ParseError::MultipleSourcesForProvider {
-                name: "mycloud".to_string(),
-                provider_source: "mycorp/mycloud1".to_string(),
-                duplicate_source: "mycorp/mycloud2".to_string(),
-            })
-        );
-
-        Ok(())
-    }
 }
