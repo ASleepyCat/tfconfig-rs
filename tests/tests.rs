@@ -117,3 +117,32 @@ fn test_load_module_from_file_with_multiple_sources() -> std::result::Result<(),
 
     Ok(())
 }
+
+#[test]
+fn test_load_module_from_file_unexpected_expr() -> std::result::Result<(), Box<dyn Error>> {
+    let file: hcl::Body = hcl::from_str(
+        r#"
+        terraform {
+            required_version = "1.0.0"
+
+            required_providers {
+                mycloud = "test"
+            }
+        }
+        "#,
+    )?;
+
+    let pathbuf = PathBuf::from("test");
+    let mut module = Module::new(pathbuf.clone());
+    let result = tfconfig::load_module_from_file(&pathbuf, file, &mut module);
+
+    assert!(result.is_err());
+    if let ParseError::UnexpectedExpr { attribute_key, expr: _, file_name } = result.unwrap_err() {
+        assert_eq!("mycloud", attribute_key);
+        assert_eq!(pathbuf, file_name);
+    } else {
+        panic!("Unexpected error type");
+    }
+
+    Ok(())
+}

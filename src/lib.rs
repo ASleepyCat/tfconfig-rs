@@ -57,9 +57,9 @@ pub enum ParseError {
         provider_source: String,
         duplicate_source: String,
     },
-    #[error("Unexpected expression for attribute {attribute:?} in {file_name}: {expr:?}")]
+    #[error("Unexpected expression for attribute {attribute_key:?} in {file_name}: {expr:?}")]
     UnexpectedExpr {
-        attribute: hcl::Attribute,
+        attribute_key: String,
         expr: hcl::Expression,
         file_name: PathBuf,
     },
@@ -82,7 +82,11 @@ pub fn load_module(path: &PathBuf) -> Result<Module, Box<dyn Error>> {
 }
 
 /// Reads given file, interprets it and stores in given [`Module`][Module]
-pub fn load_module_from_file(current_file: &PathBuf, file: hcl::Body, module: &mut Module) -> Result<(), ParseError> {
+pub fn load_module_from_file(
+    current_file: &PathBuf,
+    file: hcl::Body,
+    module: &mut Module,
+) -> Result<(), ParseError> {
     for block in file.blocks() {
         let body = block.body();
 
@@ -96,7 +100,11 @@ pub fn load_module_from_file(current_file: &PathBuf, file: hcl::Body, module: &m
     Ok(())
 }
 
-fn handle_terraform_block(current_file: &PathBuf, body: &hcl::Body, module: &mut Module) -> Result<(), ParseError> {
+fn handle_terraform_block(
+    current_file: &PathBuf,
+    body: &hcl::Body,
+    module: &mut Module,
+) -> Result<(), ParseError> {
     body.attributes()
         .filter(|attr| attr.key() == "required_version")
         .for_each(|attr| {
@@ -108,7 +116,9 @@ fn handle_terraform_block(current_file: &PathBuf, body: &hcl::Body, module: &mut
     for inner_block in body.blocks() {
         #[allow(clippy::all)]
         match inner_block.identifier() {
-            "required_providers" => handle_required_providers_block(current_file, inner_block.body(), module)?,
+            "required_providers" => {
+                handle_required_providers_block(current_file, inner_block.body(), module)?
+            }
             _ => (),
         }
     }
@@ -118,10 +128,10 @@ fn handle_terraform_block(current_file: &PathBuf, body: &hcl::Body, module: &mut
 
 fn handle_required_providers_block(
     current_file: &PathBuf,
-    body: &hcl::Body,
+    required_providers: &hcl::Body,
     module: &mut Module,
 ) -> Result<(), ParseError> {
-    for provider in body.attributes() {
+    for provider in required_providers.attributes() {
         let provider_name = provider.key().to_string();
         let mut provider_req = ProviderRequirement::default();
 
@@ -138,7 +148,7 @@ fn handle_required_providers_block(
             }
             _ => {
                 return Err(ParseError::UnexpectedExpr {
-                    attribute: provider.clone(),
+                    attribute_key: provider_name,
                     expr: provider.expr().clone(),
                     file_name: current_file.clone(),
                 })
