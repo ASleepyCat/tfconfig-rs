@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, fs, path::PathBuf};
+use std::{collections::HashMap, error::Error, fs, path::{PathBuf, Path}};
 
 use hcl::ObjectKey;
 use thiserror::Error;
@@ -83,7 +83,7 @@ pub fn load_module(path: &PathBuf) -> Result<Module, Box<dyn Error>> {
 
 /// Reads given file, interprets it and stores in given [`Module`][Module]
 pub fn load_module_from_file(
-    current_file: &PathBuf,
+    current_file: &Path,
     file: hcl::Body,
     module: &mut Module,
 ) -> Result<(), ParseError> {
@@ -101,7 +101,7 @@ pub fn load_module_from_file(
 }
 
 fn handle_terraform_block(
-    current_file: &PathBuf,
+    current_file: &Path,
     body: &hcl::Body,
     module: &mut Module,
 ) -> Result<(), ParseError> {
@@ -127,7 +127,7 @@ fn handle_terraform_block(
 }
 
 fn handle_required_providers_block(
-    current_file: &PathBuf,
+    current_file: &Path,
     required_providers: &hcl::Body,
     module: &mut Module,
 ) -> Result<(), ParseError> {
@@ -150,7 +150,7 @@ fn handle_required_providers_block(
                 return Err(ParseError::UnexpectedExpr {
                     attribute_key: provider_name,
                     expr: provider.expr().clone(),
-                    file_name: current_file.clone(),
+                    file_name: current_file.to_path_buf(),
                 })
             }
         };
