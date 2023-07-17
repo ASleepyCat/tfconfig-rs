@@ -155,29 +155,7 @@ fn handle_required_providers_block(
             }
         };
 
-        match module.required_providers.get_mut(&provider_name) {
-            Some(existing_provider) => {
-                if !provider_req.source.is_empty()
-                    && !existing_provider.source.is_empty()
-                    && existing_provider.source != provider_req.source
-                {
-                    return Err(ParseError::MultipleSourcesForProvider {
-                        name: provider_name.clone(),
-                        provider_source: existing_provider.source.clone(),
-                        duplicate_source: provider_req.source.clone(),
-                    });
-                }
-
-                existing_provider
-                    .version_constraints
-                    .append(&mut provider_req.version_constraints);
-            }
-            None => {
-                _ = module
-                    .required_providers
-                    .insert(provider_name, provider_req)
-            }
-        };
+        module.required_providers.insert(provider_name, provider_req);
     }
 
     Ok(())
