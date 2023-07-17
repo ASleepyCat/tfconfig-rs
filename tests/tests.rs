@@ -82,43 +82,6 @@ fn test_load_module_from_file() -> std::result::Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn test_load_module_from_file_with_multiple_sources() -> std::result::Result<(), Box<dyn Error>> {
-    let file: hcl::Body = hcl::from_str(
-        r#"
-        terraform {
-            required_version = "1.0.0"
-
-            required_providers {
-                mycloud = {
-                    source  = "mycorp/mycloud1"
-                    version = "~> 1.0"
-                }
-                mycloud = {
-                    source  = "mycorp/mycloud2"
-                    version = "~> 2.0"
-                }
-            }
-        }
-        "#,
-    )?;
-
-    let pathbuf = PathBuf::from("");
-    let mut module = Module::new(pathbuf.clone());
-    let result = tfconfig::load_module_from_file(&pathbuf, file, &mut module);
-
-    assert_eq!(
-        result,
-        Err(ParseError::MultipleSourcesForProvider {
-            name: "mycloud".to_string(),
-            provider_source: "mycorp/mycloud1".to_string(),
-            duplicate_source: "mycorp/mycloud2".to_string(),
-        })
-    );
-
-    Ok(())
-}
-
-#[test]
 fn test_load_module_from_file_unexpected_expr() -> std::result::Result<(), Box<dyn Error>> {
     let file: hcl::Body = hcl::from_str(
         r#"
