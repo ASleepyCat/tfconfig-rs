@@ -1,6 +1,6 @@
 use std::{error::Error, fs::File, io::Write, path::PathBuf};
 use tempdir::TempDir;
-use tfconfig::{Module, ParseError};
+use tfconfig::{Module, Error as TfConfigError};
 
 #[test]
 fn test_load_module() -> std::result::Result<(), Box<dyn Error>> {
@@ -100,7 +100,7 @@ fn test_load_module_from_file_unexpected_expr() -> std::result::Result<(), Box<d
     let result = tfconfig::load_module_from_file(&pathbuf, file, &mut module);
 
     assert!(result.is_err());
-    if let ParseError::UnexpectedExpr { attribute_key, expr: _, file_name } = result.unwrap_err() {
+    if let TfConfigError::UnexpectedExpr { attribute_key, expr: _, file_name } = result.unwrap_err() {
         assert_eq!("mycloud", attribute_key);
         assert_eq!(pathbuf, file_name);
     } else {

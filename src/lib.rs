@@ -1,7 +1,8 @@
-use std::{collections::HashMap, error::Error, fs, path::{PathBuf, Path}};
-
+use std::{collections::HashMap, fs, path::{PathBuf, Path}, io, error};
 use hcl::ObjectKey;
 use thiserror::Error;
+
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Module {
@@ -49,14 +50,14 @@ impl ProviderRef {
     }
 }
 
-#[derive(Error, Debug, PartialEq)]
-pub enum ParseError {
-    #[error(r#"Found multiple source attributes for provider {name:?}: "{provider_source:?}", "{duplicate_source:?}""#)]
-    MultipleSourcesForProvider {
-        name: String,
-        provider_source: String,
-        duplicate_source: String,
-    },
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Other(#[from] Box<dyn error::Error>),
+    #[error(transparent)]
+    Parse(#[from] hcl::Error),
     #[error("Unexpected expression for attribute {attribute_key:?} in {file_name}: {expr:?}")]
     UnexpectedExpr {
         attribute_key: String,
@@ -66,7 +67,7 @@ pub enum ParseError {
 }
 
 /// Reads the directory at the given path and attempts to interpret it as a Terraform module.
-pub fn load_module(path: &PathBuf) -> Result<Module, Box<dyn Error>> {
+pub fn load_module(path: &PathBuf) -> Result<Module> {
     let mut module = Module::new(path.clone());
 
     let files = get_files_in_dir(path)?;
@@ -86,7 +87,7 @@ pub fn load_module_from_file(
     current_file: &Path,
     file: hcl::Body,
     module: &mut Module,
-) -> Result<(), ParseError> {
+) -> Result<()> {
     for block in file.blocks() {
         let body = block.body();
 
@@ -104,7 +105,7 @@ fn handle_terraform_block(
     current_file: &Path,
     body: &hcl::Body,
     module: &mut Module,
-) -> Result<(), ParseError> {
+) -> Result<()> {
     body.attributes()
         .filter(|attr| attr.key() == "required_version")
         .for_each(|attr| {
@@ -130,7 +131,7 @@ fn handle_required_providers_block(
     current_file: &Path,
     required_providers: &hcl::Body,
     module: &mut Module,
-) -> Result<(), ParseError> {
+) -> Result<()> {
     for provider in required_providers.attributes() {
         let provider_name = provider.key().to_string();
         let mut provider_req = ProviderRequirement::default();
@@ -147,7 +148,7 @@ fn handle_required_providers_block(
                 }
             }
             _ => {
-                return Err(ParseError::UnexpectedExpr {
+                return Err(Error::UnexpectedExpr {
                     attribute_key: provider_name,
                     expr: provider.expr().clone(),
                     file_name: current_file.to_path_buf(),
@@ -161,7 +162,7 @@ fn handle_required_providers_block(
     Ok(())
 }
 
-fn get_files_in_dir(path: &PathBuf) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+fn get_files_in_dir(path: &PathBuf) -> Result<Vec<PathBuf>> {
     let mut primary = vec![];
     let mut overrides = vec![];
 
