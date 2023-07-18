@@ -108,18 +108,6 @@ fn test_load_module_from_file_unexpected_expr() -> result::Result<(), Box<dyn Er
         }) if attribute_key == "mycloud" && file_name == pathbuf
     ));
 
-    // if let TfConfigError::UnexpectedExpr {
-    //     attribute_key,
-    //     expr: _,
-    //     file_name,
-    // } = result.unwrap_err()
-    // {
-    //     assert_eq!("mycloud", attribute_key);
-    //     assert_eq!(pathbuf, file_name);
-    // } else {
-    //     panic!("Unexpected error type");
-    // }
-
     Ok(())
 }
 
