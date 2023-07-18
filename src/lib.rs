@@ -1,9 +1,14 @@
-use std::{collections::HashMap, error::Error, fs, path::{PathBuf, Path}};
-
 use hcl::ObjectKey;
+use std::{
+    collections::HashMap,
+    error, fs, io,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
-#[derive(Debug)]
+type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug, Default)]
 pub struct Module {
     pub path: PathBuf,
     pub required_core: Vec<String>,
@@ -14,8 +19,7 @@ impl Module {
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
-            required_core: vec![],
-            required_providers: HashMap::new(),
+            ..Default::default()
         }
     }
 }
@@ -49,14 +53,14 @@ impl ProviderRef {
     }
 }
 
-#[derive(Error, Debug, PartialEq)]
-pub enum ParseError {
-    #[error(r#"Found multiple source attributes for provider {name:?}: "{provider_source:?}", "{duplicate_source:?}""#)]
-    MultipleSourcesForProvider {
-        name: String,
-        provider_source: String,
-        duplicate_source: String,
-    },
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Other(#[from] Box<dyn error::Error>),
+    #[error(transparent)]
+    Parse(#[from] hcl::Error),
     #[error("Unexpected expression for attribute {attribute_key:?} in {file_name}: {expr:?}")]
     UnexpectedExpr {
         attribute_key: String,
@@ -66,14 +70,31 @@ pub enum ParseError {
 }
 
 /// Reads the directory at the given path and attempts to interpret it as a Terraform module.
-pub fn load_module(path: &PathBuf) -> Result<Module, Box<dyn Error>> {
-    let mut module = Module::new(path.clone());
+///
+/// # Arguments
+///
+/// * `path` - Path to the directory containing the Terraform configuration
+/// * `strict` - Whether to immediately return an error if a file in the directory cannot be parsed
+pub fn load_module(path: &Path, strict: bool) -> Result<Module> {
+    let mut module = Module::new(path.to_path_buf());
 
     let files = get_files_in_dir(path)?;
 
     for file_name in files {
         let file_contents = fs::read_to_string(&file_name)?;
-        let file = hcl::parse(&file_contents)?;
+        let file = match hcl::parse(&file_contents) {
+            Ok(body) => body,
+            Err(e) => match e {
+                hcl::Error::Parse(e) => {
+                    if strict {
+                        return Err(Error::Parse(hcl::Error::Parse(e)));
+                    } else {
+                        continue;
+                    }
+                }
+                _ => return Err(Error::Other(Box::new(e))),
+            },
+        };
 
         load_module_from_file(&file_name, file, &mut module)?;
     }
@@ -86,7 +107,7 @@ pub fn load_module_from_file(
     current_file: &Path,
     file: hcl::Body,
     module: &mut Module,
-) -> Result<(), ParseError> {
+) -> Result<()> {
     for block in file.blocks() {
         let body = block.body();
 
@@ -104,7 +125,7 @@ fn handle_terraform_block(
     current_file: &Path,
     body: &hcl::Body,
     module: &mut Module,
-) -> Result<(), ParseError> {
+) -> Result<()> {
     body.attributes()
         .filter(|attr| attr.key() == "required_version")
         .for_each(|attr| {
@@ -130,7 +151,7 @@ fn handle_required_providers_block(
     current_file: &Path,
     required_providers: &hcl::Body,
     module: &mut Module,
-) -> Result<(), ParseError> {
+) -> Result<()> {
     for provider in required_providers.attributes() {
         let provider_name = provider.key().to_string();
         let mut provider_req = ProviderRequirement::default();
@@ -147,7 +168,7 @@ fn handle_required_providers_block(
                 }
             }
             _ => {
-                return Err(ParseError::UnexpectedExpr {
+                return Err(Error::UnexpectedExpr {
                     attribute_key: provider_name,
                     expr: provider.expr().clone(),
                     file_name: current_file.to_path_buf(),
@@ -155,13 +176,15 @@ fn handle_required_providers_block(
             }
         };
 
-        module.required_providers.insert(provider_name, provider_req);
+        module
+            .required_providers
+            .insert(provider_name, provider_req);
     }
 
     Ok(())
 }
 
-fn get_files_in_dir(path: &PathBuf) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+fn get_files_in_dir(path: &Path) -> Result<Vec<PathBuf>> {
     let mut primary = vec![];
     let mut overrides = vec![];
 
