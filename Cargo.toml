@@ -1,6 +1,6 @@
 [package]
 name = "tfconfig"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["ASleepyCat dyeom340@gmail.com"]
 license = "MPL-2.0"
