@@ -1,10 +1,14 @@
-use std::{collections::HashMap, fs, path::{PathBuf, Path}, io, error};
 use hcl::ObjectKey;
+use std::{
+    collections::HashMap,
+    error, fs, io,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Module {
     pub path: PathBuf,
     pub required_core: Vec<String>,
@@ -15,8 +19,7 @@ impl Module {
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
-            required_core: vec![],
-            required_providers: HashMap::new(),
+            ..Default::default()
         }
     }
 }
@@ -67,14 +70,31 @@ pub enum Error {
 }
 
 /// Reads the directory at the given path and attempts to interpret it as a Terraform module.
-pub fn load_module(path: &PathBuf) -> Result<Module> {
-    let mut module = Module::new(path.clone());
+///
+/// # Arguments
+///
+/// * `path` - Path to the directory containing the Terraform configuration
+/// * `strict` - Whether to immediately return an error if a file in the directory cannot be parsed
+pub fn load_module(path: &Path, strict: bool) -> Result<Module> {
+    let mut module = Module::new(path.to_path_buf());
 
     let files = get_files_in_dir(path)?;
 
     for file_name in files {
         let file_contents = fs::read_to_string(&file_name)?;
-        let file = hcl::parse(&file_contents)?;
+        let file = match hcl::parse(&file_contents) {
+            Ok(body) => body,
+            Err(e) => match e {
+                hcl::Error::Parse(e) => {
+                    if strict {
+                        return Err(Error::Parse(hcl::Error::Parse(e)));
+                    } else {
+                        continue;
+                    }
+                }
+                _ => return Err(Error::Other(Box::new(e))),
+            },
+        };
 
         load_module_from_file(&file_name, file, &mut module)?;
     }
@@ -156,13 +176,15 @@ fn handle_required_providers_block(
             }
         };
 
-        module.required_providers.insert(provider_name, provider_req);
+        module
+            .required_providers
+            .insert(provider_name, provider_req);
     }
 
     Ok(())
 }
 
-fn get_files_in_dir(path: &PathBuf) -> Result<Vec<PathBuf>> {
+fn get_files_in_dir(path: &Path) -> Result<Vec<PathBuf>> {
     let mut primary = vec![];
     let mut overrides = vec![];
 
