@@ -58,10 +58,10 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error(transparent)]
-    Other(#[from] Box<dyn error::Error>),
+    Other(#[from] Box<dyn error::Error + Sync + Send>),
     #[error(transparent)]
     Parse(#[from] hcl::Error),
-    #[error("Unexpected expression for attribute {attribute_key:?} in {file_name}: {expr:?}")]
+    #[error("unexpected expression for attribute {attribute_key:?} in {file_name}: {expr:?}")]
     UnexpectedExpr {
         attribute_key: String,
         expr: hcl::Expression,
