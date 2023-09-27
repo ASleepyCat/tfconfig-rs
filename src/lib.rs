@@ -81,22 +81,30 @@ pub fn load_module(path: &Path, strict: bool) -> Result<Module> {
     let files = get_files_in_dir(path)?;
 
     for file_name in files {
-        let file_contents = fs::read_to_string(&file_name)?;
-        let file = match hcl::parse(&file_contents) {
-            Ok(body) => body,
-            Err(e) => match e {
-                hcl::Error::Parse(e) => {
-                    if strict {
-                        return Err(Error::Parse(hcl::Error::Parse(e)));
-                    } else {
-                        continue;
-                    }
-                }
-                _ => return Err(Error::Other(Box::new(e))),
-            },
-        };
+        match fs::read_to_string(&file_name) {
+            Ok(file_contents) => {
+                let file = match hcl::parse(&file_contents) {
+                    Ok(body) => body,
+                    Err(e) => match e {
+                        hcl::Error::Parse(e) => {
+                            if strict {
+                                return Err(Error::Parse(hcl::Error::Parse(e)));
+                            } else {
+                                continue;
+                            }
+                        }
+                        _ => return Err(Error::Other(Box::new(e))),
+                    },
+                };
 
-        load_module_from_file(&file_name, file, &mut module)?;
+                load_module_from_file(&file_name, file, &mut module)?;
+            }
+            Err(e) => {
+                if strict {
+                    return Err(Error::Io(e));
+                }
+            }
+        }
     }
 
     Ok(module)
