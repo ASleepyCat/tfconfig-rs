@@ -1,6 +1,9 @@
+# tfconfig-rs
+
 Rust port of [terraform-config-inspect](https://github.com/hashicorp/terraform-config-inspect).
 
-# Implemented features
+## Implemented features
+
 - [x] `path`
 - [x] `required_core`
 - [x] `required_providers`
