@@ -12,6 +12,6 @@ categories = ["parsing"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hcl-rs = "0.16.2"
+hcl-rs = "0.18.0"
 tempdir = "0.3.7"
 thiserror = "1.0.41"
