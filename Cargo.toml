@@ -14,4 +14,4 @@ categories = ["parsing"]
 [dependencies]
 hcl-rs = "0.18.0"
 tempdir = "0.3.7"
-thiserror = "1.0.41"
+thiserror = "2.0.11"
